@@ -1,0 +1,35 @@
+########################### Stage 1 ########################
+FROM maven:3.8.4-eclipse-temurin-17 AS builder
+
+RUN mkdir -p /tmp/build
+
+COPY . /tmp/build/
+
+WORKDIR /tmp/build
+
+RUN mvn clean package && \
+	java -Djarmode=layertools -jar ./target/containerization-demo*.jar extract --destination target/extracted
+
+########################### Stage 2 ########################
+FROM eclipse-temurin:17-jdk-alpine
+
+RUN mkdir /app && \
+	mkdir /app/logs && \
+	touch /tmp/pid && \
+	touch /app/logs/spring-boot-logger.log
+
+WORKDIR /app
+
+COPY --from=builder /tmp/build/target/extracted/dependencies/* ./
+COPY --from=builder /tmp/build/target/extracted/spring-boot-loader/* ./
+COPY --from=builder /tmp/build/target/extracted/application/* ./
+# COPY --from=builder /tmp/build/target/extracted/snapshot-dependencies/* ./
+
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup && \
+	chown -R appuser:appgroup /app/ && \
+	chmod 777 /tmp/pid && \
+	chown appuser:appgroup /tmp/pid
+
+USER appuser
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
